@@ -1,0 +1,24 @@
+{
+  "name": "classroom-lib-backend",
+  "version": "1.0.0",
+  "description": "Main backend for all components of the classroom-lib ecosystem. Will serve (classroom-lib-dashboard, classroom-lib-kiosk, and classroom-lib). On top of this, providiing an api for needed functionality (Users, UserBooks, ActivityLog, Students and Library) - all collections within MongoDB. In the future will provide this capability to (classroom-lib-dashboard-app and classroom-lib-kiosk-app).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Joshua Kemp",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "bcrypt": "^5.0.1",
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "express": "^4.17.1",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^5.13.7",
+    "nodemon": "^2.0.12",
+    "simple-isbn": "^1.1.5"
+  }
+}

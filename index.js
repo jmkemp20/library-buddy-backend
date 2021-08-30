@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 5000;
 const userRoutes = require("./routes/user-routes");
 const studentRoutes = require("./routes/student-routes");
 const userBooksRoutes = require("./routes/user-books-routes");
+const activityLogRoutes = require("./routes/activity-log-routes");
 const authJwt = require("./middleware/authJWT");
 const userValidate = require("./middleware/userValidate");
 
@@ -28,6 +29,11 @@ app.use(
   "/api/userbooks",
   [authJwt.verifyToken, userValidate.validateUserID],
   userBooksRoutes
+);
+app.use(
+  "/api/activitylog",
+  [authJwt.verifyToken, userValidate.validateUserID],
+  activityLogRoutes
 );
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

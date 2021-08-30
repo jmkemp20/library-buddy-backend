@@ -11,7 +11,7 @@ const activityLogSchema = new Schema(
       },
     },
     user_id: { type: Schema.Types.ObjectId, ref: "Users", required: true },
-    user_book_id: {
+    userbook_id: {
       type: Schema.Types.ObjectId,
       ref: "UserBooks",
       required: true,

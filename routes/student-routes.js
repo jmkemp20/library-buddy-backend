@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { Students } = require("../models/student-model");
+const { ActivityLog } = require("../models/activity-log-model");
 const userBookController = require("../controllers/user-book-controller");
 const libController = require("../controllers/library-controller");
-const { restart } = require("nodemon");
+const { UserBooks } = require("../models/user-book-model");
 
 router.get("/", (req, res) => {
     console.log(`Getting students with: ${req.user_id}`);
@@ -35,6 +36,9 @@ router.get("/books", (req, res) => {
               student_name: students[i].name,
               checked_out_books: []
             });
+            if (return_data.length === students.length) {
+              res.status(200).send(return_data);
+            }
           } else {
             for (let y = 0; y < students[i].checkout_list.length; y++) {
               userBookController.getUserBook({ user_id: user_id, userbook_id: students[i].checkout_list[y].userbook_id }, (err, foundUserBook) => {
@@ -45,10 +49,6 @@ router.get("/books", (req, res) => {
                     checkout_date: students[i].checkout_list[y].checkout_date,
                   });
                   if (user_book_data.length === students[i].checkout_list.length) {
-                    console.log({
-                      student_id: students[i]._id,
-                      user_book_info: [...user_book_data],
-                    });
                     return_data.push({
                       student_id: students[i]._id,
                       student_name: students[i].name,
@@ -101,6 +101,9 @@ router.get("/:sid/books", (req, res) => {
           return res.status(500).send({ error: "Error Finding Student" });
         if (foundStudent) {
           const return_data = [];
+          if (foundStudent.checkout_list.length === 0) {
+            return res.status(200).send(return_data);
+          }
           for (let i = 0; i < foundStudent.checkout_list.length; i++) {
             userBookController.getUserBook({ user_id: user_id, userbook_id: foundStudent.checkout_list[i].userbook_id }, (err, foundUserBook) => {
               if (err) return res.status(500).send({ error: err });
@@ -156,6 +159,8 @@ router.post("/add", (req, res) => {
   adds the UserBook _id to the checkout_list of student along with current date 
 
   Out: {title, author}
+
+  *** IN THE FUTURE - check User days_till_overdue and student_book_limit
 */
 router.post("/checkout", (req, res) => {
   const student_id = req.body['student_id'];
@@ -186,16 +191,25 @@ router.post("/checkout", (req, res) => {
               });
               foundStudent.save((err) => {
                 if (err) return res.status(500).send({ error: "Error Updating Student" });
-                console.log("saved Student");
-              });
-              foundUserBook.checkout_history.push({
-                student_id: foundStudent._id,
-                checkout_date: currDate
-              });
-              foundUserBook.save((err) => {
-                if (err) return res.status(500).send({ error: "Error Updating UserBook" });
-                console.log("saved UserBook")
-                res.sendStatus(200);
+                foundUserBook.checkout_history.push({
+                  student_id: foundStudent._id,
+                  checkout_date: currDate,
+                  checkin_date: -1
+                });
+                foundUserBook.save((err) => {
+                  if (err) return res.status(500).send({ error: "Error Updating UserBook" });
+                  const tempActivityLog = new ActivityLog({
+                    user_id: user_id,
+                    userbook_id: foundUserBook._id,
+                    student_id: foundStudent._id,
+                    activity_type: "CHECKOUT",
+                    activity_date: currDate
+                  });
+                  tempActivityLog.save((err) => {
+                    if (err) return res.status(500).send({ error: "Error Saving ActivityLog" });
+                    res.status(200).send({ message: "Successful Checkout" });
+                  });
+                });
               });
             } else {
               res.status(404).send({ error: "Unable to Find Student" });
@@ -218,10 +232,71 @@ router.post("/checkout", (req, res) => {
   Given Student sid and ISBN isbn finds UserBook via ISBN and 
   adds the UserBook _id to the checkout_list of student along with current date 
 */
-router.post("/:sid/checkin/:ubid", (req, res) => {
-  /*
-
-  */
+router.post("/checkin", (req, res) => {
+  const user_id = req.user_id;
+  const student_id = req.body['student_id'];
+  const userbook_id = req.body['userbook_id'];
+  if (!student_id || student_id === undefined) {
+    return res.status(400).send({ error: "Invalid student_id" });
+  }
+  if (!userbook_id || userbook_id === undefined) {
+    return res.status(400).send({ error: "Invalid userbook_id" });
+  }
+  Students.findOne({ _id: student_id, user_id: user_id }, (err, foundStudent) => {
+    if (err) return res.status(500).send({ error: err });
+    if (foundStudent) {
+      /**
+       * First, get the UserBook_id and remove it from the checkout_list from student
+       * Then, update checkout_history of given userbook with a checkin date
+       * Lastly, push CHECKIN type activity log
+       */
+      const currDate = Math.floor(Date.now() / 1000);
+      const userBookIndex = foundStudent.checkout_list.findIndex((element) => element.userbook_id == userbook_id);
+      if (userBookIndex == -1) return res.status(404).send({ error: "Student Does not have this book checked out" });
+      const checkoutDate = foundStudent.checkout_list[userBookIndex].checkout_date;
+      //foundStudent.checkout_list.splice(userBookIndex, 1);
+      // foundStudent.save((err) => {
+      //   if (err) res.status(500).send({ error: "Unable to Save Student" });
+      // });
+      UserBooks.findOne({ _id: userbook_id }, (err, foundUserBook) => {
+        if (err) return res.status(500).send({ error: err });
+        if (foundUserBook) {
+          const historyIndex = foundUserBook.checkout_history.findIndex((element) => {
+            return (element.student_id == student_id && element.checkout_date == checkoutDate);
+          });
+          if (historyIndex == -1) return res.status(404).send({ error: "UserBook Does Not Have this History" });
+          foundUserBook.checkout_history[historyIndex].checkin_date = currDate;
+          foundUserBook.save((err, newUserBook) => {
+            if (err) return res.status(500).send({ error: err });
+            foundStudent.checkout_list.splice(userBookIndex, 1);
+            foundStudent.total_time_reading += Math.floor((currDate - checkoutDate) / 60);
+            userBookController.getPagesFromUserBook({user_id: user_id, userbook_id: userbook_id}, (err, pages) => {
+              if (err) return res.status(500).send({ error: err });
+              foundStudent.total_pages_read += pages;
+              foundStudent.save((err) => {
+                if (err) return res.status(500).send({ error: err });
+                const tempActivityLog = new ActivityLog({
+                  user_id: user_id,
+                  userbook_id: foundUserBook._id,
+                  student_id: foundStudent._id,
+                  activity_type: "CHECKIN",
+                  activity_date: currDate
+                });
+                tempActivityLog.save((err) => {
+                  if (err) return res.status(500).send({ error: "Error Saving ActivityLog" });
+                  res.status(200).send({ message: "Successful CHECKIN" });
+                });
+              });
+            })
+          });
+        } else {
+          res.status(404).send({ error: "Unable to Find UserBook" });
+        }
+      });
+    } else {
+      res.status(404).send({ error: "Unable to Find Student" });
+    }
+  });
 });
 
 module.exports = router;

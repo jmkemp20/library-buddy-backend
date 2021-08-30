@@ -34,7 +34,26 @@ router.post("/register", (req, res, next) => {
   }
 });
 
-router.post("/login", (req, res, next) => {
+router.post("/login/:uid", (req, res) => {
+  const user_id = req.params['uid'];
+  Users.findById(user_id, (err, foundUser) => {
+    if (err) return res.status(500).send({ error: err });
+    if (foundUser) {
+      const token = jwt.sign({ id: foundUser._id }, secret, {
+          expiresIn: 86400 // 24 Hours
+      });
+      foundUser.last_login = Math.floor(Date.now() / 1000);
+      foundUser.save((err) => {
+          if (err) return res.status(500).send({ error: err });
+          res.send({ info: foundUser.toJSON(), token: token });
+      });
+    } else {
+      return res.status(404).send({ error: "No User Found" });
+    }
+  });
+});
+
+router.post("/login", (req, res) => {
   try {
     const { email, password } = req.body;
     if (password === undefined) {

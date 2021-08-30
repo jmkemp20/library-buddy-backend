@@ -170,6 +170,7 @@ router.post("/checkout", (req, res) => {
   if (!isbn || isbn === undefined) {
     return res.status(400).send({ error: "Invalid ISBN" });
   }
+  console.log(`Student: ${student_id} Checking Out: ${isbn}`);
   libController.getBookByISBN(isbn, (err, foundBook) => {
     if (err) return res.status(500).send({ error: err });
     if (foundBook) {
@@ -184,33 +185,41 @@ router.post("/checkout", (req, res) => {
             if (err) return res.status(500).send({ error: "Error Finding Student" });
             const currDate = Math.floor(Date.now() / 1000);
             if (foundStudent) {
-              foundStudent.total_checkouts += 1;
-              foundStudent.checkout_list.push({
-                userbook_id: foundUserBook._id,
-                checkout_date: currDate
-              });
-              foundStudent.save((err) => {
-                if (err) return res.status(500).send({ error: "Error Updating Student" });
-                foundUserBook.checkout_history.push({
-                  student_id: foundStudent._id,
-                  checkout_date: currDate,
-                  checkin_date: -1
+              const alreadyCheckedOut = (foundStudent.checkout_list.find((element) => {
+                if (element.userbook_id == String(foundUserBook._id))
+                  return true;
+              }));
+              if (alreadyCheckedOut == undefined) {
+                foundStudent.total_checkouts += 1;
+                foundStudent.checkout_list.push({
+                  userbook_id: foundUserBook._id,
+                  checkout_date: currDate
                 });
-                foundUserBook.save((err) => {
-                  if (err) return res.status(500).send({ error: "Error Updating UserBook" });
-                  const tempActivityLog = new ActivityLog({
-                    user_id: user_id,
-                    userbook_id: foundUserBook._id,
+                foundStudent.save((err) => {
+                  if (err) return res.status(500).send({ error: "Error Updating Student" });
+                  foundUserBook.checkout_history.push({
                     student_id: foundStudent._id,
-                    activity_type: "CHECKOUT",
-                    activity_date: currDate
+                    checkout_date: currDate,
+                    checkin_date: -1
                   });
-                  tempActivityLog.save((err) => {
-                    if (err) return res.status(500).send({ error: "Error Saving ActivityLog" });
-                    res.status(200).send({ message: "Successful Checkout" });
+                  foundUserBook.save((err) => {
+                    if (err) return res.status(500).send({ error: "Error Updating UserBook" });
+                    const tempActivityLog = new ActivityLog({
+                      user_id: user_id,
+                      userbook_id: foundUserBook._id,
+                      student_id: foundStudent._id,
+                      activity_type: "CHECKOUT",
+                      activity_date: currDate
+                    });
+                    tempActivityLog.save((err) => {
+                      if (err) return res.status(500).send({ error: "Error Saving ActivityLog" });
+                      res.status(200).send({ message: `Checked Out: ${foundBook.title}` });
+                    });
                   });
                 });
-              });
+              } else {
+                res.status(200).send({ message: "Book Already Checked Out" });
+              }
             } else {
               res.status(404).send({ error: "Unable to Find Student" });
             }
@@ -242,6 +251,7 @@ router.post("/checkin", (req, res) => {
   if (!userbook_id || userbook_id === undefined) {
     return res.status(400).send({ error: "Invalid userbook_id" });
   }
+  console.log(`Student: ${student_id} Checking In: ${userbook_id}`);
   Students.findOne({ _id: student_id, user_id: user_id }, (err, foundStudent) => {
     if (err) return res.status(500).send({ error: err });
     if (foundStudent) {
@@ -295,6 +305,69 @@ router.post("/checkin", (req, res) => {
       });
     } else {
       res.status(404).send({ error: "Unable to Find Student" });
+    }
+  });
+});
+
+/**
+ * In: {user_id, student_id, student_info}
+ * 
+ * This will be a all purpose edit option for students, taking in all updated student info
+ * 
+ * Out: {student_info}
+ */
+router.post("/edit/:sid", (req, res) => {
+  const user_id = req.user_id;
+  const student_id = req.params["sid"];
+  if (!student_id || student_id === undefined) {
+    return res.status(400).send({ error: "Invalid student_id" });
+  }
+  const student_info = {...req.body};
+  Students.findOne({ _id: student_id, user_id: user_id }, (err, foundStudent) => {
+    if (err) return res.status(500).send({ error: err });
+    if (foundStudent) {
+      foundStudent.classroom_name = (student_info.classroom_name !== undefined)
+        ? student_info.classroom_name : foundStudent.classroom_name;
+      foundStudent.email =
+        student_info.email !== undefined
+          ? student_info.email
+          : foundStudent.email;
+      foundStudent.favorite_genre =
+        student_info.favorite_genre !== undefined
+          ? student_info.favorite_genre
+          : foundStudent.favorite_genre;
+      foundStudent.reading_level =
+        student_info.reading_level !== undefined
+          ? student_info.reading_level
+          : foundStudent.reading_level;
+      foundStudent.name =
+        student_info.name !== undefined ? student_info.name : foundStudent.name;
+      foundStudent.number =
+        student_info.number !== undefined
+          ? student_info.number
+          : foundStudent.number;
+      foundStudent.save((err, newStudent) => {
+        if (err) return res.status(500).send({ error: err });
+        res.status(200).send(newStudent);
+      });
+    } else {
+      res.status(404).send({ error: "Unable to Find Student" });
+    }
+  });
+});
+
+router.delete("/:sid", (req, res) => {
+  const user_id = req.user_id;
+  const student_id = req.params["sid"];
+  if (!student_id || student_id === undefined) {
+    return res.status(400).send({ error: "Invalid student_id" });
+  }
+  Students.deleteOne({ _id: student_id, user_id: user_id }, (err, deletedStudent) => {
+    if (err) return res.status(500).send({ error: err });
+    if (deletedStudent.deletedCount > 0) {
+      res.status(410).send({ message: "Sucessfully Deleted" });
+    } else {
+      res.status(404).send({ error: "No Student Found to Delete" });
     }
   });
 });

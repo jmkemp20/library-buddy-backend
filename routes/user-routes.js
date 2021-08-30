@@ -13,7 +13,7 @@ router.post("/register", (req, res, next) => {
     Users.findOne({ email: email }, (err, user) => {
       if (err) return res.status(500).send({ error: err });
       if (user) {
-        res.status(200).send({ error: "Email Already Exists" });
+        res.status(400).send({ error: "Email Already Exists" });
       } else {
         const newUser = new Users({
           first_name: firstName,
@@ -29,7 +29,6 @@ router.post("/register", (req, res, next) => {
       }
     });
   } catch {
-      
     return res.status(500).send({ error: "Invalid Request Body" });
   }
 });

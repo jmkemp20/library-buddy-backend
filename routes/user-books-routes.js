@@ -14,6 +14,9 @@ router.get("/", (req, res) => {
     if (err) return res.status(500).send({ error: err });
     if (foundUserBooks) {
       const return_data = [];
+      if (foundUserBooks.length == 0) {
+        res.status(404).send({ error: "No Books In Library!" });
+      }
       for (let i = 0; i < foundUserBooks.length; i++) {
         libController.getBookByID(
           foundUserBooks[i].library_id,
@@ -138,6 +141,63 @@ router.post("/add", (req, res) => {
       });
     }
   });
+});
+
+router.post("/edit/:ubid", (req, res) => {
+  const user_id = req.user_id;
+  const userbook_id = req.params["ubid"];
+  if (!userbook_id || userbook_id === undefined) {
+    return res.status(400).send({ error: "Invalid userbook_id" });
+  }
+  const userbook_info = { ...req.body };
+  UserBooks.findOne(
+    { _id: userbook_id, user_id: user_id },
+    (err, foundUserBook) => {
+      if (err) return res.status(500).send({ error: err });
+      if (foundUserBook) {
+        foundUserBook.rating = (userbook_info.rating !== undefined)
+          ? userbook_info.rating : foundUserBook.rating;
+        foundUserBook.tag =
+          userbook_info.tag !== undefined
+            ? userbook_info.tag
+            : foundUserBook.tag;
+        foundUserBook.notes =
+          userbook_info.notes !== undefined
+            ? userbook_info.notes
+            : foundUserBook.notes;
+        foundUserBook.condition =
+          userbook_info.condition !== undefined
+            ? userbook_info.condition
+            : foundUserBook.condition;
+
+        foundUserBook.save((err, newUserBook) => {
+          if (err) return res.status(500).send({ error: err });
+          res.status(200).send(newUserBook);
+        });
+      } else {
+        res.status(404).send({ error: "Unable to Find UserBook" });
+      }
+    }
+  );
+});
+
+router.delete("/:ubid", (req, res) => {
+  const user_id = req.user_id;
+  const userbook_id = req.params["ubid"];
+  if (!userbook_id || userbook_id === undefined) {
+    return res.status(400).send({ error: "Invalid userbook_id" });
+  }
+  UserBooks.deleteOne(
+    { _id: userbook_id, user_id: user_id },
+    (err, deletedUserBook) => {
+      if (err) return res.status(500).send({ error: err });
+      if (deletedUserBook.deletedCount > 0) {
+        res.status(410).send({ message: "Sucessfully Deleted" });
+      } else {
+        res.status(404).send({ error: "No UserBook Found to Delete" });
+      }
+    }
+  );
 });
 
 module.exports = router;

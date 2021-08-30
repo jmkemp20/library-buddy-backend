@@ -80,4 +80,21 @@ router.get("/recent", (req, res) => {
     });
 });
 
+router.delete("/:alid", (req, res) => {
+  const user_id = req.user_id;
+  const activitylog_id = req.params["alid"];
+  if (!activitylog_id || activitylog_id === undefined) {
+    return res.status(400).send({ error: "Invalid userbook_id" });
+  }
+  ActivityLog.deleteOne({ _id: activitylog_id, user_id: user_id }, (err, deletedActivityLog) => {
+      if (err) return res.status(500).send({ error: err });
+      if (deletedActivityLog.deletedCount > 0) {
+        res.status(410).send({ error: "Successfully Deleted" });
+      } else {
+          res.status(404).send({ error: "No ActivityLog Found to Delete" });
+      }
+  });
+
+});
+
 module.exports = router;

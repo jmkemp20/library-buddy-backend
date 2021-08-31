@@ -1,7 +1,7 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const path = require('path');
-const axios = require('axios');
+const express = require("express");
+const mongoose = require("mongoose");
+const path = require("path");
+const axios = require("axios");
 const cors = require("cors");
 require("dotenv").config();
 
@@ -24,7 +24,11 @@ app.get("*", (req, res) => {
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use("/api/user", userRoutes);
-app.use("/api/students", [authJwt.verifyToken, userValidate.validateUserID], studentRoutes);
+app.use(
+  "/api/students",
+  [authJwt.verifyToken, userValidate.validateUserID],
+  studentRoutes
+);
 app.use(
   "/api/userbooks",
   [authJwt.verifyToken, userValidate.validateUserID],
@@ -45,6 +49,7 @@ mongoose
     useUnifiedTopology: true,
     useFindAndModify: false,
     useCreateIndex: true,
+    auto_reconnect: true,
   })
   .then(() => {
     console.info("MongoDB Connected");
@@ -56,6 +61,14 @@ mongoose
 const db = mongoose.connection;
 
 db.on("error", console.error.bind(console, "connection error:"));
+
+db.on("reconnected", function () {
+  console.log("MongoDB reconnected!");
+});
+db.on("disconnected", function () {
+  console.log("MongoDB disconnected!");
+  mongoose.connect(process.env.DB_URI, { auto_reconnect: true });
+});
 
 /* -------- Express API Connectors -------- */
 /*

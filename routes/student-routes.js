@@ -17,7 +17,7 @@ router.get("/", (req, res) => {
         } else {
             res.status(500).send({ error: "No Students Found" });
         }
-    });
+    }).lean();
 });
 
 
@@ -129,10 +129,12 @@ router.post("/add", (req, res) => {
     const studentNumber = req.body["number"];
     const classroomName = req.body["classroom_name"];
     const studentEmail = req.body["email"];
-    if (!studentName || studentName === undefined) {
+    const favoriteGenre = req.body["favorite_genre"];
+    const readingLevel = req.body["reading_level"];
+    if (!studentName || studentName === undefined || studentName == '') {
       return res.status(400).send({ error: "Invalid Student Name" });
     }
-    if (!studentNumber || studentNumber === undefined) {
+    if (studentNumber === undefined || studentNumber < 0) {
       return res.status(400).send({ error: "Invalid Student Number" });
     }
     const tempStudent = new Students({
@@ -140,16 +142,71 @@ router.post("/add", (req, res) => {
       name: studentName,
       number: studentNumber,
     });
-    if (classroomName) {
+    if (classroomName && classroomName !== "") {
       tempStudent.classroom_name = classroomName;
     }
-    if (studentEmail) {
+    if (studentEmail && studentEmail !== "") {
       tempStudent.email = studentEmail;
+    }
+    if (favoriteGenre && favoriteGenre !== '') {
+      tempStudent.favorite_genre = favoriteGenre;
+    }
+    if (readingLevel && readingLevel !== "") {
+      tempStudent.reading_level = readingLevel;
     }
     tempStudent.save((err) => {
         if (err) return res.status(500).send({ error: err });
         res.status(200).send({ data: tempStudent });
     });
+});
+
+router.post("/edit/:sid", (req, res) => {
+  const user_id = req.user_id;
+  const student_id = req.params["sid"];
+  if (!student_id || student_id === undefined) {
+    return res.status(400).send({ error: "No StudentID Provided" });
+  }
+  const studentName = req.body["name"];
+  const studentNumber = req.body["number"];
+  const classroomName = req.body["classroom_name"];
+  const studentEmail = req.body["email"];
+  const favoriteGenre = req.body["favorite_genre"];
+  const readingLevel = req.body["reading_level"];
+  if (!studentName || studentName === undefined || studentName == '') {
+    return res.status(400).send({ error: "Invalid Student Name" });
+  }
+  if (!studentNumber || studentNumber === undefined) {
+    return res.status(400).send({ error: "Invalid Student Number" });
+  }
+  Students.findOne({ user_id: user_id, _id: student_id }, (err, foundStudent) => {
+    if (err) return res.status(500).send({ error: err });
+    if (foundStudent) {
+      if (studentName && studentName !== "") {
+        foundStudent.name = studentName;
+      }
+      if (studentNumber && studentNumber !== "") {
+        foundStudent.number = studentNumber;
+      }
+      if (classroomName && classroomName !== "") {
+        foundStudent.classroom_name = classroomName;
+      }
+      if (studentEmail && studentEmail !== "") {
+        foundStudent.email = studentEmail;
+      }
+      if (favoriteGenre && favoriteGenre !== "") {
+        foundStudent.favorite_genre = favoriteGenre;
+      }
+      if (readingLevel && readingLevel !== "") {
+        foundStudent.reading_level = readingLevel;
+      }  
+      foundStudent.save((err, newStudent) => {
+        if (err) return res.status(500).send({ error: err });
+        res.status(200).send({ data: newStudent });
+      });
+    } else {
+      res.status(404).send({ error: "Unable to Find Student" });
+    }
+  });
 });
 
 /*
@@ -302,53 +359,6 @@ router.post("/checkin", (req, res) => {
         } else {
           res.status(404).send({ error: "Unable to Find UserBook" });
         }
-      });
-    } else {
-      res.status(404).send({ error: "Unable to Find Student" });
-    }
-  });
-});
-
-/**
- * In: {user_id, student_id, student_info}
- * 
- * This will be a all purpose edit option for students, taking in all updated student info
- * 
- * Out: {student_info}
- */
-router.post("/edit/:sid", (req, res) => {
-  const user_id = req.user_id;
-  const student_id = req.params["sid"];
-  if (!student_id || student_id === undefined) {
-    return res.status(400).send({ error: "Invalid student_id" });
-  }
-  const student_info = {...req.body};
-  Students.findOne({ _id: student_id, user_id: user_id }, (err, foundStudent) => {
-    if (err) return res.status(500).send({ error: err });
-    if (foundStudent) {
-      foundStudent.classroom_name = (student_info.classroom_name !== undefined)
-        ? student_info.classroom_name : foundStudent.classroom_name;
-      foundStudent.email =
-        student_info.email !== undefined
-          ? student_info.email
-          : foundStudent.email;
-      foundStudent.favorite_genre =
-        student_info.favorite_genre !== undefined
-          ? student_info.favorite_genre
-          : foundStudent.favorite_genre;
-      foundStudent.reading_level =
-        student_info.reading_level !== undefined
-          ? student_info.reading_level
-          : foundStudent.reading_level;
-      foundStudent.name =
-        student_info.name !== undefined ? student_info.name : foundStudent.name;
-      foundStudent.number =
-        student_info.number !== undefined
-          ? student_info.number
-          : foundStudent.number;
-      foundStudent.save((err, newStudent) => {
-        if (err) return res.status(500).send({ error: err });
-        res.status(200).send(newStudent);
       });
     } else {
       res.status(404).send({ error: "Unable to Find Student" });

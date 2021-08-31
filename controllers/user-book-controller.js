@@ -47,7 +47,7 @@ exports.getUserBookByLibraryID = ({ user_id, library_id }, callback) => {
     if (foundUserBook) {
       callback(null, foundUserBook);
     } else {
-      callback("Unable to Find UserBook via LibraryID", false);
+      callback(null, false);
     }
   });
 };

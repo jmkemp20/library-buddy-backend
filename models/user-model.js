@@ -31,6 +31,7 @@ const userSchema = new Schema(
       grade_level: { type: String, default: "Unknown" },
       school_name: { type: String, default: "Unknown" },
     },
+    profileImg: { type: String, default: "profile.jpg" },
     email: { type: String, required: true, index: { unique: true } },
     password: { type: String, required: true },
   },

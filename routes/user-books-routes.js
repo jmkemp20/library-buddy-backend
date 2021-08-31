@@ -1,11 +1,35 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
+const csv = require('csv-parser');
+const fs = require('fs');
 const libController = require("../controllers/library-controller");
 const userBookController = require("../controllers/user-book-controller");
 const ISBNConverter = require("simple-isbn").isbn;
 const { Users } = require("../models/user-model");
 const { Library } = require("../models/library-model");
 const { UserBooks } = require("../models/user-book-model");
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "public/files");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype == "application/vnd.ms-excel" || file.mimetype == "text/csv" || file.mimetype == "application/octet-stream") {
+        cb(null, true);
+    } else {
+        cb(null, false);
+        return cb(new Error('Only .csv files allowed!'));
+    }
+}
+}).single("file");
 
 router.get("/", (req, res) => {
   console.log(`Getting UserBooks with UserID: ${req.user_id}`);
@@ -26,7 +50,7 @@ router.get("/", (req, res) => {
               userBookInfo: foundUserBooks[i],
               libraryInfo: foundBook,
             });
-            if (i === foundUserBooks.length - 1) {
+            if (return_data.length === foundUserBooks.length) {
               res.status(200).send(return_data);
             }
           }
@@ -57,6 +81,7 @@ router.post("/add", (req, res) => {
   const user_id = req.user_id;
   const isbn = req.body["isbn"];
   const title = req.body["title"];
+  console.log(isbn);
   if (!isbn || isbn === undefined) {
     return res.status(400).send({ error: "Invalid ISBN" });
   }
@@ -94,20 +119,16 @@ router.post("/add", (req, res) => {
           const tempUserBook = new UserBooks({
             user_id: user_id,
             library_id: foundBook._id,
-            ...userBookInfo,
           });
-          tempUserBook.save((err, savedUserBook) => {
+          tempUserBook.save((err) => {
             if (err)
               return res.status(500).send({
                 error:
                   "Unable to Save UserBook reference to Existing LibraryBook",
               });
-            res
-              .status(201)
-              .send({
-                message:
-                  "Created New UserBook Reference to Existing LibraryBook",
-              });
+            res.status(201).send({
+              message: "Created New UserBook Reference to Existing LibraryBook",
+            });
           });
         }
       });
@@ -143,6 +164,175 @@ router.post("/add", (req, res) => {
   });
 });
 
+router.post("/add/:isbn", (req, res) => {
+  const user_id = req.user_id;
+  const isbn = req.params["isbn"];
+  if (!isbn || isbn === undefined) {
+    return res.status(400).send({ error: "Invalid ISBN" });
+  }
+  libController.getBookByISBN(isbn, (err, foundBook) => {
+    if (err) return res.status(500).send({ error: err });
+    if (foundBook) {
+      // first check to see if userbook ref already exits
+      // if so, add copy, else, create usebook ref
+      const query = {
+        user_id: user_id,
+        library_id: foundBook._id,
+      };
+      userBookController.getUserBookByLibraryID(query, (err, foundUserBook) => {
+        if (err) return res.status(404).send({ error: err });
+        if (foundUserBook) {
+          // TODO: Check to see if foundBook fields are still set to defaults - will want to save more info
+          foundUserBook.copies += 1;
+          foundUserBook.save((err) => {
+            if (err)
+              return res
+                .status(500)
+                .send({ error: "Unable to Update User Book" });
+            res.status(200).send({
+              message: "Updated UserBook Reference to Existing LibraryBook",
+            });
+          });
+        } else {
+          const tempUserBook = new UserBooks({
+            user_id: user_id,
+            library_id: foundBook._id,
+          });
+          tempUserBook.save((err, savedUserBook) => {
+            if (err)
+              return res.status(500).send({
+                error:
+                  "Unable to Save UserBook reference to Existing LibraryBook",
+              });
+            res.status(201).send({
+              message: "Created New UserBook Reference to Existing LibraryBook",
+            });
+          });
+        }
+      });
+    } else {
+      // Need to add the book to the library and add userbook ref
+      const tempBook = new Library({
+        isbn_10: isbn.length === 10 ? isbn : ISBNConverter.toIsbn10(isbn),
+        isbn_13: isbn.length === 13 ? isbn : ISBNConverter.toIsbn13(isbn),
+        title: title,
+        ...libraryInfo,
+      });
+      tempBook.save((err, savedBook) => {
+        if (err)
+          return res
+            .status(500)
+            .send({ error: "Unable to Save Book to Library" });
+        const tempUserBook = new UserBooks({
+          user_id: user_id,
+          library_id: savedBook._id,
+          ...userBookInfo,
+        });
+        tempUserBook.save((err, savedUserBook) => {
+          if (err)
+            return res
+              .status(500)
+              .send({ error: "Unable to Save Book to UserBooks" });
+          res
+            .status(201)
+            .send({ message: "Created New UserBook and LibraryBook" });
+        });
+      });
+    }
+  });
+});
+
+router.post("/libraryUpload", (req, res) => {
+  const user_id = req.user_id;
+  upload(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(500).send({ error : err });
+    } else if (err) {
+      return res.status(500).send({ error : err });
+    }
+    console.log(`Uploaded: ${req.file.filename}`)
+    const results = [];
+    fs.createReadStream(`public/files/${req.file.filename}`)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', () => {
+      let count = 0;
+      for (let i = 0; i < results.length; i++) {
+        const isbn = results[i].isbn13 == '' ? results[i].isbn10 : results[i].isbn13;
+        libController.getBookByISBN(isbn, (err, foundBook) => {
+          if (foundBook) {
+            const query = {
+              user_id: user_id,
+              library_id: foundBook._id,
+            };
+            userBookController.getUserBookByLibraryID(query, (err, foundUserBook) => {
+              if (err) return res.status(404).send({ error: err });
+              if (foundUserBook) {
+                // TODO: Check to see if foundBook fields are still set to defaults - will want to save more info
+                foundUserBook.copies += 1;
+                foundUserBook.save((err) => {
+                  if (err)
+                    return res
+                      .status(500)
+                      .send({ error: "Unable to Update User Book" });
+                  count++;
+                  if (count === results.length - 1) {
+                    res.status(200).send({ message: `Added ${results.length} Books!` });
+                  }
+                });
+              } else {
+                const tempUserBook = new UserBooks({
+                  user_id: user_id,
+                  library_id: foundBook._id,
+                  tag: results[i].tags,
+                  notes: results[i].notes !== "" ? results[i].notes : "No Notes",
+                });
+                tempUserBook.save((err) => {
+                  if (err) return res.status(500).send({ error: "Unable to Save UserBook reference to Existing LibraryBook" });
+                  count++;
+                  if (count === results.length - 1) {
+                    res.status(200).send({ message: `Added ${results.length} Books!` });
+                  }
+                });
+              }
+            });
+          } else {
+            const tempLibraryBook = new Library({
+              title: results[i].title !== '' ? results[i].title : "Unknown",
+              author: results[i].authors !== '' ? results[i].authors : "Unknown",
+              description: results[i].description,
+              publisher: results[i].publisher !== '' ? results[i].publisher : "Unknown",
+              publish_date: results[i].publish_date !== '' ? results[i].publish_date : "Unknown",
+              pages: Number(results[i].pages),
+              isbn_10: results[i].isbn10,
+              isbn_13: results[i].isbn13,
+            });
+            tempLibraryBook.save((err, newLibraryBook) => {
+              if (err) return res.status(500).send({ error: err });
+              const tempUserBook = new UserBooks({
+                user_id: user_id,
+                library_id: newLibraryBook._id,
+                tag: results[i].tags,
+                notes: results[i].notes !== "" ? results[i].notes : "No Notes",
+              });
+              tempUserBook.save((err) => {
+                if (err) return res.status(500).send({ error: err });
+                count++;
+                if (count === results.length - 1) {
+                  res.status(200).send({ message: `Added ${results.length} Books!` });
+                }
+              });
+            });
+          }
+        });
+        if (count === results.length - 1) {
+          res.status(200).send({ message: `Added ${results.length} Books!` });
+        }
+      }
+    });
+  });
+});
+
 router.post("/edit/:ubid", (req, res) => {
   const user_id = req.user_id;
   const userbook_id = req.params["ubid"];
@@ -155,8 +345,10 @@ router.post("/edit/:ubid", (req, res) => {
     (err, foundUserBook) => {
       if (err) return res.status(500).send({ error: err });
       if (foundUserBook) {
-        foundUserBook.rating = (userbook_info.rating !== undefined)
-          ? userbook_info.rating : foundUserBook.rating;
+        foundUserBook.rating =
+          userbook_info.rating !== undefined
+            ? userbook_info.rating
+            : foundUserBook.rating;
         foundUserBook.tag =
           userbook_info.tag !== undefined
             ? userbook_info.tag
